@@ -1,4 +1,5 @@
 # データベース状態レポート
+> このファイルで行うこと: `db/monitor.db` の最新統計・スキーマ・今後のTODOをまとめます。
 
 ## データベースファイル
 
@@ -11,27 +12,28 @@
 3. **`log_params`** - パラメータ抽出結果
 4. **`pattern_rules`** - 異常判定ルール
 5. **`alerts`** - 通知履歴
-6. **`ai_analyses`** - AI解析結果（将来拡張用）
+6. **`ai_analyses`** - （未実装: 現在テーブルなし／将来拡張用）
 
 ## データ統計
 
 ### ログエントリ（log_entries）
 
-- **総ログ数**: 8,729件
-- **既知ログ**: 6,977件 (79.9%)
-- **未知ログ**: 1,752件 (20.1%)
-- **異常ログ**: 0件
-- **未知分類ログ**: 8,729件
-- **ユニークホスト数**: 2件
-  - 172.20.224.101
-  - 172.20.224.103
+- **総ログ数**: 34,911件
+- **既知ログ**: 33,041件 (94.6%)
+- **未知ログ**: 1,870件 (5.4%)
+- **分類内訳**:
+  - `unknown`: 34,895件
+  - `abnormal`: 8件
+  - `normal`: 8件
+- **ユニークホスト数**: 8件
+  - 172.20.224.101 / 102 / 103 / 104 / 105 / 108 / 109 / 110
 
 ### パターン（regex_patterns）
 
-- **総パターン数**: 1,752個
-- **未知パターン**: 1,752個 (100%)
-- **正常パターン**: 0個
-- **異常パターン**: 0個
+- **総パターン数**: 1,871個
+- **未知パターン**: 1,868個 (99.8%)
+- **正常パターン**: 2個
+- **異常パターン**: 1個
 - **無視パターン**: 0個
 
 ### パラメータ（log_params）
@@ -41,20 +43,21 @@
 
 ### 異常判定ルール（pattern_rules）
 
-- **総ルール数**: 0件
-- **理由**: まだルールが定義されていない
+- **総ルール数**: 6件
+- **内訳**: すべて `threshold` タイプ（PCIe帯域幅など）
 
 ### アラート（alerts）
 
-- **総アラート数**: 8,729件
-- **保留中**: 8,729件 (100%)
-- **送信済み**: 0件
-- **失敗**: 0件
+- **総アラート数**: 34,908件
+- **ステータス内訳**:
+  - `pending`: 34,908件
+  - `sent`: 0件
+  - `failed`: 0件
 
 ### AI解析（ai_analyses）
 
+- **テーブル状態**: まだ作成されていません（設計上のプレースホルダ）
 - **総解析数**: 0件
-- **理由**: AI機能は未実装
 
 ## テーブル構造
 
@@ -63,7 +66,8 @@
 ```sql
 CREATE TABLE regex_patterns (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
-    regex_rule TEXT NOT NULL UNIQUE,
+    regex_rule TEXT UNIQUE,
+    manual_regex_rule TEXT UNIQUE,
     sample_message TEXT NOT NULL,
     label TEXT NOT NULL DEFAULT 'unknown',
     severity TEXT,
@@ -72,7 +76,11 @@ CREATE TABLE regex_patterns (
     last_seen_at DATETIME NOT NULL,
     total_count INTEGER NOT NULL DEFAULT 1,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    CHECK (
+        (regex_rule IS NOT NULL AND manual_regex_rule IS NULL) OR
+        (regex_rule IS NULL AND manual_regex_rule IS NOT NULL)
+    )
 )
 ```
 
@@ -150,20 +158,6 @@ CREATE TABLE alerts (
 )
 ```
 
-### ai_analyses
-
-```sql
-CREATE TABLE ai_analyses (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    log_id INTEGER NOT NULL,
-    prompt TEXT,
-    response TEXT,
-    model_name TEXT,
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-    FOREIGN KEY (log_id) REFERENCES log_entries(id)
-)
-```
-
 ## インデックス
 
 - `idx_regex_patterns_regex_rule` - regex_patterns.regex_rule
@@ -178,6 +172,7 @@ CREATE TABLE ai_analyses (
 - `idx_pattern_rules_is_active` - pattern_rules.is_active
 - `idx_alerts_status` - alerts.status
 - `idx_alerts_log_id` - alerts.log_id
+- （`ai_analyses` 用のインデックスは未作成）
 
 ## 処理済みファイル
 
