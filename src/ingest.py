@@ -102,7 +102,8 @@ class LogIngester:
                         is_known = 1 if pattern_id and not is_new_pattern else 0
                         
                         # パターンのラベルに基づいてclassificationを決定
-                        classification = 'unknown'
+                        # デフォルトは 'normal'（見たことがないログは 'unknown' に変更される）
+                        classification = 'normal'
                         severity = None
                         if pattern_id:
                             cursor.execute("""
@@ -114,6 +115,9 @@ class LogIngester:
                             if pattern_row:
                                 classification = pattern_row['label']
                                 severity = pattern_row['severity']
+                        else:
+                            # パターンが見つからない場合（未知ログ）は 'unknown'
+                            classification = 'unknown'
                         
                         # log_entries に INSERT
                         cursor.execute("""
@@ -276,10 +280,11 @@ class LogIngester:
             return (pattern_id, False)
         
         # 新規パターン: 作成（自動生成なので regex_rule に格納、manual_regex_rule は NULL）
+        # デフォルトは 'normal'（見たことがないログは後で 'unknown' に変更可能）
         cursor.execute("""
             INSERT INTO regex_patterns
             (regex_rule, manual_regex_rule, sample_message, label, severity, first_seen_at, last_seen_at, total_count)
-            VALUES (?, NULL, ?, 'unknown', 'unknown', ?, ?, 1)
+            VALUES (?, NULL, ?, 'normal', NULL, ?, ?, 1)
         """, (regex_rule, sample_message, now, now))
         
         pattern_id = cursor.lastrowid

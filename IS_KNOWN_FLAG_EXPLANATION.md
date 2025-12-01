@@ -18,7 +18,7 @@ CREATE TABLE log_entries (
     pattern_id INTEGER,                    -- パターンID（外部キー）
     is_known INTEGER DEFAULT 0,            -- ← 既知/未知フラグ
     is_manual_mapped INTEGER DEFAULT 0,
-    classification TEXT DEFAULT 'unknown',
+    classification TEXT DEFAULT 'normal',
     severity TEXT,
     anomaly_reason TEXT,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,

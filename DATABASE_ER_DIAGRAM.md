@@ -11,7 +11,7 @@
 │     regex_rule            TEXT UNIQUE (NULL可)                          │
 │     manual_regex_rule     TEXT UNIQUE (NULL可)                          │
 │     sample_message        TEXT NOT NULL                                 │
-│     label                 TEXT NOT NULL DEFAULT 'unknown'                │
+│     label                 TEXT NOT NULL DEFAULT 'normal'                 │
 │     severity              TEXT                                           │
 │     note                  TEXT                                           │
 │     first_seen_at         DATETIME NOT NULL                              │
@@ -43,7 +43,7 @@
 │ FK  pattern_id            INTEGER → regex_patterns.id                    │
 │     is_known              INTEGER DEFAULT 0                              │
 │     is_manual_mapped      INTEGER DEFAULT 0                              │
-│     classification        TEXT DEFAULT 'unknown'                         │
+│     classification        TEXT DEFAULT 'normal'                          │
 │     severity              TEXT                                           │
 │     anomaly_reason        TEXT                                           │
 │     created_at            DATETIME DEFAULT CURRENT_TIMESTAMP             │

@@ -7,6 +7,9 @@ GPUサーバなどのログ（syslog形式）を対象に、パターン学習�
 
 - 各ログ行を `abstract_message()` で正規表現パターンに変換
 - パターン単位で `normal` / `abnormal` / `unknown` / `ignore` をラベル付け
+  - **`normal`**: 普通のログ（デフォルト）
+  - **`unknown`**: 見たことがないログ
+  - **`abnormal`**: 見たことがあるが危険なログ
 - `abnormal` / `unknown` に分類されたログを Slack に通知
 - 既知ログの異常検知（パラメータ抽出とルールベース判定）
 - 未知ログの手動マッピング機能

@@ -252,7 +252,7 @@ def map_unknown_log_to_pattern(db_path: str, log_id: int, pattern_id: int):
 
 
 def add_pattern(db_path: str, regex_rule: str, sample_message: str, 
-                label: str = 'unknown', severity: str = None, 
+                label: str = 'normal', severity: str = None, 
                 component: str = None, note: str = None, 
                 update_existing: bool = False):
     """
@@ -338,7 +338,7 @@ def add_pattern(db_path: str, regex_rule: str, sample_message: str,
     return pattern_id
 
 
-def add_pattern_from_log(db_path: str, log_id: int, label: str = 'unknown', 
+def add_pattern_from_log(db_path: str, log_id: int, label: str = 'normal', 
                          severity: str = None, note: str = None):
     """
     未知ログから正規表現パターンを生成して追加
@@ -432,7 +432,7 @@ def main():
     parser_add.add_argument('regex_rule', help='Regular expression pattern')
     parser_add.add_argument('sample_message', help='Sample message')
     parser_add.add_argument('--label', choices=['normal', 'abnormal', 'unknown', 'ignore'], 
-                           default='unknown', help='Pattern label')
+                           default='normal', help='Pattern label')
     parser_add.add_argument('--severity', help='Severity (info, warning, critical, etc.)')
     parser_add.add_argument('--component', help='Component filter (e.g., kernel)')
     parser_add.add_argument('--note', help='Note text')
@@ -445,7 +445,7 @@ def main():
                                            help='Generate pattern from unknown log and add it')
     parser_from_log.add_argument('log_id', type=int, help='Log entry ID')
     parser_from_log.add_argument('--label', choices=['normal', 'abnormal', 'unknown', 'ignore'], 
-                                 default='unknown', help='Pattern label')
+                                 default='normal', help='Pattern label')
     parser_from_log.add_argument('--severity', help='Severity (info, warning, critical, etc.)')
     parser_from_log.add_argument('--note', help='Note text')
     parser_from_log.add_argument('--db', default='db/monitor.db', help='Database path')
