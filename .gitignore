@@ -34,3 +34,4 @@ logs/
 test_*.py
 *_test.py
 
+.env

@@ -239,11 +239,11 @@ python3 src/cli_tools.py add-pattern \
 
 ```bash
 # 追加したパターンIDを取得
-IXGBE_PATTERN_ID=$(sqlite3 db/monitor.db "SELECT id FROM regex_patterns WHERE sample_message LIKE '%ixgbe%' ORDER BY id DESC LIMIT 1;")
-echo "ixgbe Pattern ID: $IXGBE_PATTERN_ID"
+#ここのLIKE内の内容を決めるのが重要 　IXGBE_PATTERN_ID=$(sqlite3 db/monitor.db "SELECT id FROM regex_patterns WHERE sample_message LIKE '%ixgbe%' ORDER BY id DESC LIMIT 1;")
+# echo "ixgbe Pattern ID: $IXGBE_PATTERN_ID"
 
 # このパターンにマッチするunknownログを確認
-sqlite3 db/monitor.db "SELECT id, message FROM log_entries WHERE classification = 'unknown' AND message LIKE '%ixgbe%' LIMIT 10;"
+#ここのLIKEも重要 sqlite3 db/monitor.db "SELECT id, message FROM log_entries WHERE classification = 'unknown' AND message LIKE '%ixgbe%' LIMIT 10;"
 
 # 手動でログをパターンに紐付け（例: ログID 100をパターンに紐付け）
 python3 src/cli_tools.py map-log 100 $IXGBE_PATTERN_ID --db db/monitor.db
