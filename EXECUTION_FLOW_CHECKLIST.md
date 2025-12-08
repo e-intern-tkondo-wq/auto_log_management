@@ -280,25 +280,15 @@ python3 src/cli_tools.py add-pattern \
 ```bash
 # 追加したパターンIDを取得
 #ここのLIKE内の内容を決めるのが重要 　
+# パターンIDを取得（既に追加済みのixgbeパターンを利用）
 IXGBE_PATTERN_ID=$(sqlite3 db/monitor.db "SELECT id FROM regex_patterns WHERE sample_message LIKE '%ixgbe%' ORDER BY id DESC LIMIT 1;")
-echo "ixgbe Pattern ID: $IXGBE_PATTERN_ID"
 
-# このパターンに正規表現でマッチするunknownログのみを抽出して確認
+# このパターンにマッチするunknownログのみを抽出して確認
 # （単純なLIKEだと過剰マッチするため、安全にフィルタする）
-python3 - <<'PY'
-import re, sqlite3
-pat = re.compile(r"\[\s+\d+\.\d+\]\s+ixgbe\s+([0-9a-fA-F]+:[0-9a-fA-F]+:[0-9a-fA-F]+\.\d+):\s+((?:[0-9a-fA-F]{2}:){5}[0-9a-fA-F]{2})")
-conn = sqlite3.connect("db/monitor.db")
-conn.row_factory = sqlite3.Row
-rows = conn.execute(
-    "SELECT id, message FROM log_entries WHERE classification = 'unknown' AND message LIKE '%ixgbe%'"
-).fetchall()
-for r in rows:
-    m = pat.search(r["message"])
-    if m:
-        print(f"{r['id']}\t{m.group(1)}\t{m.group(2)}\t{r['message'][:120]}")
-conn.close()
-PY
+python3 scripts/filter_unknown_logs.py \
+  --regex "\[\s+\d+\.\d+\]\s+ixgbe\s+([0-9a-fA-F]+:[0-9a-fA-F]+:[0-9a-fA-F]+\.\d+):\s+((?:[0-9a-fA-F]{2}:){5}[0-9a-fA-F]{2})" \
+  --db db/monitor.db \
+  --limit 500
 
 # 上で確認したIDのみを手動で紐付け（例: ログID 100 をパターンに紐付け）
 python3 src/cli_tools.py map-log 100 $IXGBE_PATTERN_ID --db db/monitor.db
