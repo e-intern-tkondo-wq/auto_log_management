@@ -240,6 +240,70 @@
 - `idx_alerts_status`: `status`
 - `idx_alerts_log_id`: `log_id`
 
+### ai_analyses
+- `idx_ai_analyses_log_id`: `log_id`
+
+---
+
+## データベース統計の確認方法
+
+データベースの状態を確認するには、以下のSQLクエリを使用します：
+
+```sql
+-- ログエントリの統計
+SELECT 
+    COUNT(*) as total_logs,
+    SUM(CASE WHEN is_known = 1 THEN 1 ELSE 0 END) as known_logs,
+    SUM(CASE WHEN is_known = 0 THEN 1 ELSE 0 END) as unknown_logs,
+    COUNT(DISTINCT host) as unique_hosts
+FROM log_entries;
+
+-- パターンの統計
+SELECT 
+    COUNT(*) as total_patterns,
+    SUM(CASE WHEN label = 'normal' THEN 1 ELSE 0 END) as normal_patterns,
+    SUM(CASE WHEN label = 'abnormal' THEN 1 ELSE 0 END) as abnormal_patterns,
+    SUM(CASE WHEN label = 'unknown' THEN 1 ELSE 0 END) as unknown_patterns,
+    SUM(CASE WHEN manual_regex_rule IS NOT NULL THEN 1 ELSE 0 END) as manual_patterns
+FROM regex_patterns;
+
+-- 分類別の統計
+SELECT 
+    classification,
+    COUNT(*) as count
+FROM log_entries
+GROUP BY classification
+ORDER BY count DESC;
+
+-- アラートの統計
+SELECT 
+    status,
+    COUNT(*) as count
+FROM alerts
+GROUP BY status;
+```
+
+詳細なクエリ例は `QUERIES.md` を参照してください。
+
+---
+
+## テーブル作成の順序
+
+データベースは以下の順序でテーブルが作成されます：
+
+1. `regex_patterns` - パターンマスタ
+2. `log_entries` - ログ本体
+3. `log_params` - パラメータ抽出結果
+4. `pattern_rules` - 異常判定ルール
+5. `alerts` - 通知履歴
+6. `ai_analyses` - AI解析結果
+
+すべてのテーブルは `src/database.py` の `_init_database()` メソッドで自動的に作成されます。
+
+### alerts
+- `idx_alerts_status`: `status`
+- `idx_alerts_log_id`: `log_id`
+
 ## 制約
 
 ### CHECK制約

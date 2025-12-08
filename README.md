@@ -464,7 +464,23 @@ python src/slack_notifier.py [--db db/monitor.db] [--webhook-url <url>]
 ## 依存パッケージ
 
 ```bash
-pip install requests
+pip install requests openai python-dotenv
+```
+
+または `requirements.txt` からインストール:
+
+```bash
+pip install -r requirements.txt
+```
+
+## 環境変数設定
+
+プロジェクトルートに `.env` ファイルを作成:
+
+```bash
+# .env
+OPENAI_API_KEY=your_openai_api_key_here
+SLACK_WEBHOOK_URL=https://hooks.slack.com/services/YOUR/WEBHOOK/URL
 ```
 
 ## 使用例
@@ -552,18 +568,52 @@ final_creation/
 │   ├── param_extractor.py     # パラメータ抽出
 │   ├── anomaly_detector.py    # 異常検知
 │   ├── slack_notifier.py      # Slack通知
+│   ├── llm_analyzer.py        # LLM自動解析
 │   ├── cli_tools.py           # CLIツール
-│   └── pattern_matcher.py     # パターンマッチング（将来拡張用）
+│   └── pattern_matcher.py    # パターンマッチング（将来拡張用）
+├── scripts/
+│   └── add_threshold_rule.py  # 閾値ルール追加スクリプト
 ├── db/
 │   └── monitor.db             # SQLiteデータベース
 ├── log_flower/
 │   └── bootlog/               # サンプルログファイル
-├── README.md                  # このファイル
+├── README.md                  # プロジェクト概要
+├── EXECUTION_FLOW.md          # 実行手順
+├── FUNCTION_REFERENCE.md      # 関数リファレンス
+├── DOCUMENTATION_STRUCTURE.md # ドキュメント構造ガイド
+├── DATABASE_ER_DIAGRAM.md     # データベーススキーマ
+├── WORKFLOW_IMPLEMENTATION_STATUS.md  # ワークフロー実装状況
+├── MANUAL_PATTERN_GUIDE.md    # 手動パターン追加ガイド
+├── LLM_IMPLEMENTATION_GUIDE.md # LLM実装ガイド
 ├── CHANGELOG.md               # 変更履歴
-├── IMPLEMENTATION_STATUS.md   # 実装状況
-├── PROGRESS_REPORT.md         # 進捗レポート
 └── requirements.txt           # 依存パッケージ
 ```
+
+詳細なドキュメント一覧は `DOCUMENTATION_STRUCTURE.md` を参照してください。
+
+## ドキュメント
+
+詳細なドキュメントは以下のファイルを参照してください：
+
+### 📘 メインドキュメント
+- **`EXECUTION_FLOW.md`** - ステップバイステップの実行手順
+- **`FUNCTION_REFERENCE.md`** - すべての関数・コマンドのリファレンス
+- **`DOCUMENTATION_STRUCTURE.md`** - ドキュメント構造ガイド
+
+### 📗 技術詳細
+- **`DATABASE_ER_DIAGRAM.md`** - データベーススキーマの詳細とER図
+- **`ABNORMAL_DETECTION_FLOW.md`** - 異常判定のフローとデータベース反映
+- **`WORKFLOW_IMPLEMENTATION_STATUS.md`** - 5つのワークフローの実装状況
+
+### 📙 機能別ガイド
+- **`MANUAL_PATTERN_GUIDE.md`** - 手動パターン追加の手順とnamed capture活用
+- **`THRESHOLD_CHECK_EXPLANATION.md`** - 閾値チェックの仕組み
+- **`LLM_IMPLEMENTATION_GUIDE.md`** - LLM自動解析機能の実装と使用方法
+
+### 📕 参考資料
+- **`QUERIES.md`** - よく使うSQLクエリ集
+- **`IS_KNOWN_FLAG_EXPLANATION.md`** - `is_known` フラグの決定システム
+- **`CHANGELOG.md`** - 変更履歴
 
 ## ライセンス
 

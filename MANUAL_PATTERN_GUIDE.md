@@ -1,6 +1,57 @@
 # 手動パターン追加ガイド
 > このファイルで行うこと: 手動パターン登録とnamed capture活用の手順を解説します。
 
+## 概要
+
+手動で作成した正規表現パターンと自動生成されたパターンを分離し、両方を参照して既知/未知を判断する機能です。
+
+## データベーススキーマ
+
+### `regex_patterns` テーブル
+
+- **`regex_rule`**: 自動生成された正規表現パターン（`abstract_message()` の出力）
+- **`manual_regex_rule`**: 手動で作成した正規表現パターン
+- **制約**: `regex_rule` と `manual_regex_rule` のどちらか一方のみが NULL でない（CHECK制約）
+
+## 動作ロジック
+
+### 1. パターンの追加
+
+#### 自動生成パターン
+- `abstract_message()` で生成されたパターンは `regex_rule` に格納
+- `manual_regex_rule` は NULL
+
+#### 手動パターン
+- `add-pattern` コマンドで追加されたパターンは `manual_regex_rule` に格納
+- `regex_rule` は NULL
+
+### 2. 既知/未知判定
+
+新しいログエントリが来た時に、以下の順序で既知/未知を判断します：
+
+1. **自動生成パターンのチェック**
+   - `abstract_message()` でパターンを生成
+   - `regex_patterns.regex_rule` と比較
+   - マッチした場合 → 既知ログ
+
+2. **手動パターンのチェック**
+   - 元のメッセージに対して `manual_regex_rule` を直接マッチング
+   - マッチした場合 → 既知ログ
+
+3. **どちらにもマッチしない場合**
+   - 新規パターンとして `regex_rule` に追加
+   - 未知ログとして分類
+
+### 3. パラメータ抽出
+
+既知ログの場合、パラメータ抽出に使用するパターンは：
+- `manual_regex_rule` が存在する場合はそれを使用
+- 存在しない場合は `regex_rule` を使用
+
+これにより、手動パターンに named capture group を含めることで、パラメータ抽出が可能になります。
+
+---
+
 ## エラーの原因
 
 以前発生していた `NOT NULL constraint failed: regex_patterns.regex_rule` エラーは、**既存のデータベースで `regex_rule` カラムに `NOT NULL` 制約が残っていた**ことが原因でした。

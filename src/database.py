@@ -187,6 +187,19 @@ class Database:
             )
         """)
         
+        # 6. ai_analyses テーブル（AI解析結果）
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS ai_analyses (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                log_id INTEGER NOT NULL,
+                prompt TEXT,
+                response TEXT,
+                model_name TEXT,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (log_id) REFERENCES log_entries(id)
+            )
+        """)
+        
         # インデックス作成
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_regex_patterns_regex_rule ON regex_patterns(regex_rule)")
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_regex_patterns_label ON regex_patterns(label)")
@@ -200,6 +213,7 @@ class Database:
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_pattern_rules_is_active ON pattern_rules(is_active)")
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_alerts_status ON alerts(status)")
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_alerts_log_id ON alerts(log_id)")
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_ai_analyses_log_id ON ai_analyses(log_id)")
         
         self.conn.commit()
     

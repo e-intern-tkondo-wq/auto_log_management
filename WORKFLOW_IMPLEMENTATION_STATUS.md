@@ -10,7 +10,7 @@
 | 2. 既知/未知の判断 | ✅ 実装済み | 100% |
 | 3. 異常判定（異常テンプレ or パラメータ異常） | ✅ 実装済み | 100% |
 | 4. 手動でテンプレ化 | ✅ 実装済み | 100% |
-| 5. LLMによる自動解析・追加 | ❌ 未実装 | 0% |
+| 5. LLMによる自動解析・追加 | ✅ 実装済み | 100% |
 
 ---
 
@@ -395,73 +395,190 @@ is_known = 1（既知ログとして扱われる）
 
 ## フロー5: 未知かつテンプレ化できないものについては、LLMによってエラーの内容を解析し、異常であれば通知を、正常であればテンプレDBへの自動追加をする
 
-### 実装状況: ❌ **未実装（0%）**
+### 実装状況: ✅ **100% 実装完了**
 
-### 未実装の内容
+### 実装箇所
 
-#### 1. LLM処理ロジック
-- **現状**: `ai_analyses` テーブルは定義されているが、LLM処理ロジックは未実装
-- **必要な実装**:
-  - LLM API（GPT-OSS等）への問い合わせ機能
-  - 未知ログの自動抽出
-  - LLMへの送信とレスポンスの取得
-  - 解析結果の保存（`ai_analyses` テーブル）
+#### 1. LLM処理モジュール
+**ファイル**: `src/llm_analyzer.py`
 
-#### 2. LLM判定後の自動処理
-- **現状**: 手動でLLMにコピーペーストして解析結果を反映する必要がある
-- **必要な実装**:
-  - LLMが異常と判断した場合の自動通知
-  - LLMが正常と判断した場合の自動パターン追加
-  - パターン追加後の既存未知ログへの自動反映
+```python
+# 23-52行目: LLMAnalyzer クラス
+class LLMAnalyzer:
+    def __init__(self, db: Database, api_key: Optional[str] = None, model: str = "gpt-4o-mini"):
+        # .envファイルまたは環境変数からAPIキーを読み込む
+        self.api_key = os.getenv('OPENAI_API_KEY') or self._load_env_file()
+        self.client = OpenAI(api_key=self.api_key)
+```
 
-#### 3. データベーススキーマ
+#### 2. 単一ログのLLM解析
+**ファイル**: `src/llm_analyzer.py`
+
+```python
+# 75-120行目: analyze_log() メソッド
+def analyze_log(self, log_id: int, log_entry: Dict) -> Dict:
+    # プロンプトを作成
+    prompt = self._create_prompt(log_entry)
+    
+    # OpenAI APIに送信
+    response = self.client.chat.completions.create(
+        model=self.model,
+        messages=[...],
+        response_format={"type": "json_object"}
+    )
+    
+    # 解析結果をパース
+    result = json.loads(response_text)
+    
+    # ai_analyses テーブルに保存
+    self._save_analysis(log_id, prompt, response_text)
+    
+    return {
+        'is_abnormal': result.get('is_abnormal', False),
+        'label': result.get('label', 'unknown'),
+        'severity': result.get('severity', 'unknown'),
+        'reason': result.get('reason', ''),
+        'pattern_suggestion': result.get('pattern_suggestion', '')
+    }
+```
+
+#### 3. 未知ログの一括処理
+**ファイル**: `src/llm_analyzer.py`
+
+```python
+# 222-330行目: process_unknown_logs() メソッド
+def process_unknown_logs(self, limit: int = 10, auto_add_pattern: bool = True):
+    # 未知ログを取得（まだLLM解析されていないもの）
+    cursor.execute("""
+        SELECT le.id, le.ts, le.host, le.component, le.message, le.raw_line
+        FROM log_entries le
+        LEFT JOIN ai_analyses aa ON le.id = aa.log_id
+        WHERE le.is_known = 0 AND aa.id IS NULL
+        ORDER BY le.ts DESC
+        LIMIT ?
+    """, (limit,))
+    
+    # 各ログをLLMで解析
+    for log_row in unknown_logs:
+        result = self.analyze_log(log_id, log_entry)
+        
+        if result['label'] == 'abnormal':
+            # 異常と判断 → アラートを作成
+            self._create_alert(log_id, 'abnormal')
+            # log_entries を更新
+            cursor.execute("""
+                UPDATE log_entries
+                SET classification = 'abnormal', severity = ?, anomaly_reason = ?
+                WHERE id = ?
+            """, (result['severity'], result['reason'], log_id))
+        
+        elif result['label'] == 'normal' and auto_add_pattern:
+            # 正常と判断 → パターンを自動追加
+            pattern_id = add_pattern(...)
+            # ログエントリをパターンに紐付け
+            cursor.execute("""
+                UPDATE log_entries
+                SET pattern_id = ?, is_known = 1, is_manual_mapped = 1,
+                    classification = 'normal', severity = ?
+                WHERE id = ?
+            """, (pattern_id, result['severity'], log_id))
+```
+
+#### 4. .envファイルの読み込み
+**ファイル**: `src/llm_analyzer.py`
+
+```python
+# 54-82行目: _load_env_file() メソッド
+def _load_env_file(self) -> Optional[str]:
+    # プロジェクトルートの .env ファイルを読み込む
+    env_path = os.path.join(current_dir, '.env')
+    # OPENAI_API_KEY=... の形式で読み込む
+```
+
+#### 5. データベーススキーマ
 **ファイル**: `src/database.py`
 
 ```python
-# ai_analyses テーブルは定義されているが未使用
-CREATE TABLE IF NOT EXISTS ai_analyses (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    log_id INTEGER NOT NULL,
-    prompt TEXT,
-    response TEXT,
-    model_name TEXT,
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-    FOREIGN KEY (log_id) REFERENCES log_entries(id)
-)
+# 189-199行目: ai_analyses テーブルの作成
+cursor.execute("""
+    CREATE TABLE IF NOT EXISTS ai_analyses (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        log_id INTEGER NOT NULL,
+        prompt TEXT,
+        response TEXT,
+        model_name TEXT,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (log_id) REFERENCES log_entries(id)
+    )
+""")
 ```
 
-### 必要な実装
+#### 6. CLIツール
+**ファイル**: `src/llm_analyzer.py`
 
-1. **LLM処理モジュールの作成**
-   - `src/llm_analyzer.py` の作成
-   - LLM APIへの問い合わせ機能
-   - レスポンスのパース機能
+```python
+# 333-405行目: main() 関数
+# コマンドラインインターフェース
+python3 src/llm_analyzer.py --db db/monitor.db --limit 10
+python3 src/llm_analyzer.py --db db/monitor.db --log-id <log_id>
+```
 
-2. **自動処理フローの実装**
-   - 未知ログの自動抽出
-   - LLMへの自動送信
-   - 解析結果に基づく自動処理
-     - 異常 → 通知（`alerts` テーブルに追加）
-     - 正常 → パターン追加（`regex_patterns` テーブルに追加）
+### 処理フロー
 
-3. **CLIツールの追加**
-   - `python3 src/cli_tools.py analyze-with-llm <log_id>` コマンド
-   - バッチ処理用のコマンド
+```
+未知ログ（is_known = 0）
+    ↓
+LLM解析（process_unknown_logs()）
+    ├─ 未知ログを抽出（ai_analyses に未登録のもの）
+    └─ 各ログをLLMで解析
+        ↓
+    LLMの判定結果
+        ├─ abnormal → アラート作成 + log_entries.classification = 'abnormal'
+        ├─ normal → パターン自動追加 + is_known = 1
+        └─ unknown → そのまま（手動対応待ち）
+    ↓
+ai_analyses テーブルに解析結果を保存
+```
 
-### 現状の代替手段
+### 使用方法
 
-**ファイル**: `EXECUTION_FLOW.md` (752-807行目)
+#### 1. .envファイルの設定
+
+プロジェクトルートに `.env` ファイルを作成:
 
 ```bash
-# ステップ7: 手動でLLMに解析を依頼
-# 1. 未知ログを抽出
-sqlite3 db/monitor.db "SELECT ... FROM log_entries WHERE is_known = 0 ..."
-
-# 2. LLMにコピーペーストして解析を依頼（手動）
-
-# 3. LLMの解析結果を基に手動でパターンを追加
-python3 src/cli_tools.py add-pattern "<正規表現>" "<サンプル>" --label normal
+# .env
+OPENAI_API_KEY=your_openai_api_key_here
 ```
+
+#### 2. 依存パッケージのインストール
+
+```bash
+pip install openai python-dotenv
+```
+
+#### 3. LLM解析の実行
+
+```bash
+# 未知ログを一括でLLM解析（自動パターン追加あり）
+python3 src/llm_analyzer.py --db db/monitor.db --limit 10
+
+# 特定のログをLLM解析
+python3 src/llm_analyzer.py --db db/monitor.db --log-id <log_id>
+
+# 自動パターン追加なし（解析のみ）
+python3 src/llm_analyzer.py --db db/monitor.db --limit 10 --no-auto-add
+```
+
+### 実装のポイント
+
+1. **APIキーの取得**: 環境変数 `OPENAI_API_KEY` または `.env` ファイルから読み込む
+2. **JSON形式のレスポンス**: LLMにJSON形式でレスポンスを要求し、パースしやすい形式に
+3. **自動処理**: 
+   - 異常 → アラート作成（`alerts` テーブル）
+   - 正常 → パターン追加（`regex_patterns` テーブル）+ ログエントリの紐付け
+4. **解析履歴の保存**: すべての解析結果を `ai_analyses` テーブルに保存
+5. **重複解析の防止**: `ai_analyses` テーブルを参照して、既に解析済みのログはスキップ
 
 ---
 
@@ -474,13 +591,13 @@ python3 src/cli_tools.py add-pattern "<正規表現>" "<サンプル>" --label n
 - ✅ **フロー3**: 異常判定（異常テンプレ・パラメータ異常の両方）
 - ✅ **フロー4**: 手動テンプレ化（パターン追加・既存ログの紐付け）
 
-### 未実装（フロー5）
+### 実装済み（フロー5）
 
-- ❌ **フロー5**: LLMによる自動解析・追加
-  - LLM処理ロジック: 未実装
-  - 自動通知: 未実装
-  - 自動パターン追加: 未実装
-  - 現状は手動でLLMにコピーペーストして解析結果を反映する必要がある
+- ✅ **フロー5**: LLMによる自動解析・追加
+  - LLM処理ロジック: ✅ 実装済み（`src/llm_analyzer.py`）
+  - 自動通知: ✅ 実装済み（異常と判断した場合に `alerts` テーブルに追加）
+  - 自動パターン追加: ✅ 実装済み（正常と判断した場合に `regex_patterns` テーブルに追加）
+  - .envファイルからのAPIキー読み込み: ✅ 実装済み
 
 ### 実装のポイント
 
