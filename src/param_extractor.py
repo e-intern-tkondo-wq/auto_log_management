@@ -24,7 +24,8 @@ class ParamExtractor:
         try:
             # 正規表現をコンパイル
             pattern = re.compile(regex_rule)
-            match = pattern.fullmatch(message)
+            # searchを使用（部分マッチを許可）- メッセージの後ろに追加テキストがある場合に対応
+            match = pattern.search(message)
             
             if match:
                 # named capture groupを取得
