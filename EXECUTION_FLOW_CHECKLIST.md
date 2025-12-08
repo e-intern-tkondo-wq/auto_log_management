@@ -288,7 +288,7 @@ IXGBE_PATTERN_ID=$(sqlite3 db/monitor.db "SELECT id FROM regex_patterns WHERE sa
 python3 scripts/filter_unknown_logs.py \
   --regex "\[\s+\d+\.\d+\]\s+ixgbe\s+([0-9a-fA-F]+:[0-9a-fA-F]+:[0-9a-fA-F]+\.\d+):\s+((?:[0-9a-fA-F]{2}:){5}[0-9a-fA-F]{2})" \
   --db db/monitor.db \
-  --limit 500
+  --limit 1000000
 
 # 上で確認したIDのみを手動で紐付け（例: ログID 100 をパターンに紐付け）
 python3 src/cli_tools.py map-log 100 $IXGBE_PATTERN_ID --db db/monitor.db
