@@ -102,10 +102,12 @@ class LogIngester:
                         is_known = 1 if pattern_id and not is_new_pattern else 0
                         
                         # パターンのラベルに基づいてclassificationを決定
-                        # デフォルトは 'normal'（見たことがないログは 'unknown' に変更される）
-                        classification = 'normal'
+                        # デフォルトは 'unknown'
+                        classification = 'unknown'
                         severity = None
-                        if pattern_id:
+                        
+                        # 既知ログ（is_known=1）の場合のみ、パターンのラベルを使用
+                        if is_known == 1 and pattern_id:
                             cursor.execute("""
                                 SELECT label, severity
                                 FROM regex_patterns
@@ -115,9 +117,12 @@ class LogIngester:
                             if pattern_row:
                                 classification = pattern_row['label']
                                 severity = pattern_row['severity']
-                        else:
-                            # パターンが見つからない場合（未知ログ）は 'unknown'
-                            classification = 'unknown'
+                                # パターンのラベルが 'unknown' の場合は 'normal' にする
+                                if classification == 'unknown':
+                                    classification = 'normal'
+                        
+                        # 未知ログ（is_known=0）の場合は常に 'unknown'
+                        # （パターンが作成されても、まだ未知ログとして扱う）
                         
                         # log_entries に INSERT
                         cursor.execute("""

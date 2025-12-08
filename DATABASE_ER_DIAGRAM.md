@@ -43,7 +43,7 @@
 │ FK  pattern_id            INTEGER → regex_patterns.id                    │
 │     is_known              INTEGER DEFAULT 0                              │
 │     is_manual_mapped      INTEGER DEFAULT 0                              │
-│     classification        TEXT DEFAULT 'normal'                          │
+│     classification        TEXT DEFAULT 'unknown'                         │
 │     severity              TEXT                                           │
 │     anomaly_reason        TEXT                                           │
 │     created_at            DATETIME DEFAULT CURRENT_TIMESTAMP             │

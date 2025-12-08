@@ -62,13 +62,20 @@ python3 src/llm_analyzer.py --db db/monitor.db --limit 10
 #### 2. 特定のログをLLM解析
 
 ```bash
+# 解析のみ（結果を表示してai_analysesテーブルに保存）
 python3 src/llm_analyzer.py --db db/monitor.db --log-id <log_id>
+
+# 解析 + 自動処理（--limitオプションと同様の処理を実行）
+python3 src/llm_analyzer.py --db db/monitor.db --log-id <log_id> --auto-process
 ```
 
 **動作**:
 - 指定したログIDのログをLLMで解析
 - 解析結果を表示
-- 解析結果を `ai_analyses` テーブルに保存（自動処理は行わない）
+- 解析結果を `ai_analyses` テーブルに保存
+- **`--auto-process` オプション指定時**:
+  - 異常と判断 → アラートを作成（`alerts` テーブル）+ `log_entries.classification = 'abnormal'`
+  - 正常と判断 → パターンを自動追加（`regex_patterns` テーブル）+ `is_known = 1`
 
 #### 3. 自動パターン追加なし（解析のみ）
 

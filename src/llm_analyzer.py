@@ -394,6 +394,114 @@ If the log is normal and should be added to the pattern database, provide a rege
             (log_id, alert_type, channel, status)
             VALUES (?, ?, 'slack', 'pending')
         """, (log_id, alert_type))
+    
+    def _process_single_log_result(self, cursor, conn, log_id: int, log_entry: Dict, 
+                                   result: Dict, auto_add_pattern: bool = True):
+        """
+        単一ログの解析結果に基づいて処理を実行
+        
+        Args:
+            cursor: データベースカーソル
+            conn: データベース接続
+            log_id: ログエントリのID
+            log_entry: ログエントリ情報
+            result: LLM解析結果
+            auto_add_pattern: 正常と判断した場合に自動でパターンを追加するか
+        """
+        stats = {
+            'abnormal': 0,
+            'normal': 0,
+            'unknown': 0,
+            'patterns_added': 0,
+            'alerts_created': 0
+        }
+        
+        # 結果に基づいて処理
+        if result['label'] == 'abnormal':
+            stats['abnormal'] = 1
+            # アラートを作成
+            self._create_alert(log_id, 'abnormal')
+            stats['alerts_created'] = 1
+            
+            # log_entries を更新
+            cursor.execute("""
+                UPDATE log_entries
+                SET classification = ?,
+                    severity = ?,
+                    anomaly_reason = ?
+                WHERE id = ?
+            """, (result['label'], result['severity'], result['reason'], log_id))
+            
+            print(f"  ✅ Created alert for abnormal log")
+            
+        elif result['label'] == 'normal' and auto_add_pattern:
+            stats['normal'] = 1
+            
+            # パターンを追加
+            if result.get('pattern_suggestion'):
+                try:
+                    pattern_id = add_pattern(
+                        db_path=self.db.db_path,
+                        regex_rule=result['pattern_suggestion'],
+                        sample_message=log_entry['message'],
+                        label='normal',
+                        severity=result['severity'] if result['severity'] != 'unknown' else 'info',
+                        component=log_entry.get('component'),
+                        note=f"LLM自動追加: {result['reason']}",
+                        update_existing=False
+                    )
+                    
+                    # ログエントリをパターンに紐付け
+                    cursor.execute("""
+                        UPDATE log_entries
+                        SET pattern_id = ?,
+                            is_known = 1,
+                            is_manual_mapped = 1,
+                            classification = ?,
+                            severity = ?
+                        WHERE id = ?
+                    """, (pattern_id, result['label'], result['severity'], log_id))
+                    
+                    stats['patterns_added'] = 1
+                    print(f"  ✅ Added pattern {pattern_id} and mapped log to pattern")
+                except Exception as e:
+                    print(f"  ⚠️  Failed to add pattern: {e}", file=sys.stderr)
+            else:
+                # パターン提案がない場合は abstract_message() で生成
+                from src.abstract_message import abstract_message
+                try:
+                    regex_rule = abstract_message(log_entry['message'])
+                    pattern_id = add_pattern(
+                        db_path=self.db.db_path,
+                        regex_rule=regex_rule,
+                        sample_message=log_entry['message'],
+                        label='normal',
+                        severity=result['severity'] if result['severity'] != 'unknown' else 'info',
+                        component=log_entry.get('component'),
+                        note=f"LLM自動追加（自動生成パターン）: {result['reason']}",
+                        update_existing=False
+                    )
+                    
+                    cursor.execute("""
+                        UPDATE log_entries
+                        SET pattern_id = ?,
+                            is_known = 1,
+                            is_manual_mapped = 1,
+                            classification = ?,
+                            severity = ?
+                        WHERE id = ?
+                    """, (pattern_id, result['label'], result['severity'], log_id))
+                    
+                    stats['patterns_added'] = 1
+                    print(f"  ✅ Added pattern {pattern_id} (auto-generated) and mapped log to pattern")
+                except Exception as e:
+                    print(f"  ⚠️  Failed to add pattern: {e}", file=sys.stderr)
+        else:
+            stats['unknown'] = 1
+            print(f"  ℹ️  Log classified as {result['label']} (no auto-processing)")
+        
+        conn.commit()
+        return stats
 
 
 def main():
@@ -407,6 +515,7 @@ def main():
     parser.add_argument('--limit', type=int, default=10, help='Number of logs to process')
     parser.add_argument('--no-auto-add', action='store_true', help='Do not automatically add patterns for normal logs')
     parser.add_argument('--log-id', type=int, help='Analyze specific log ID')
+    parser.add_argument('--auto-process', action='store_true', help='Automatically process analysis result (add pattern if normal, create alert if abnormal)')
     
     args = parser.parse_args()
     
@@ -446,6 +555,15 @@ def main():
             print(f"  Reason: {result['reason']}")
             if result.get('pattern_suggestion'):
                 print(f"  Pattern suggestion: {result['pattern_suggestion']}")
+            
+            # 自動処理が有効な場合、解析結果に基づいて処理を実行
+            if args.auto_process:
+                print(f"\n🔄 Auto-processing analysis result...")
+                analyzer._process_single_log_result(
+                    cursor, conn, args.log_id, log_entry, result, 
+                    auto_add_pattern=not args.no_auto_add
+                )
+                print(f"✅ Auto-processing complete")
         else:
             # 未知ログを一括処理
             analyzer.process_unknown_logs(

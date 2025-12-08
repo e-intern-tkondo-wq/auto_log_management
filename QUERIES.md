@@ -210,3 +210,146 @@ WHERE host = '172.20.224.101'
 ORDER BY ts DESC;
 ```
 
+---
+
+## 特定の正規表現パターンにマッチしているエントリ数をカウント
+
+### パターンIDでカウント
+
+```sql
+-- 特定のパターンIDにマッチしているログエントリ数をカウント
+SELECT 
+    rp.id as pattern_id,
+    COALESCE(rp.regex_rule, rp.manual_regex_rule) as pattern,
+    rp.label,
+    rp.sample_message,
+    COUNT(le.id) as log_count
+FROM regex_patterns rp
+LEFT JOIN log_entries le ON rp.id = le.pattern_id
+WHERE rp.id = <pattern_id>
+GROUP BY rp.id;
+```
+
+**例**: パターンID 100にマッチしているログ数をカウント
+```sql
+SELECT 
+    rp.id as pattern_id,
+    COALESCE(rp.regex_rule, rp.manual_regex_rule) as pattern,
+    COUNT(le.id) as log_count
+FROM regex_patterns rp
+LEFT JOIN log_entries le ON rp.id = le.pattern_id
+WHERE rp.id = 100
+GROUP BY rp.id;
+```
+
+### 正規表現パターンで検索してカウント
+
+```sql
+-- 正規表現パターン（部分一致）で検索してカウント
+SELECT 
+    rp.id as pattern_id,
+    COALESCE(rp.regex_rule, rp.manual_regex_rule) as pattern,
+    rp.label,
+    COUNT(le.id) as log_count
+FROM regex_patterns rp
+LEFT JOIN log_entries le ON rp.id = le.pattern_id
+WHERE rp.regex_rule LIKE '%<検索文字列>%' 
+   OR rp.manual_regex_rule LIKE '%<検索文字列>%'
+GROUP BY rp.id
+ORDER BY log_count DESC;
+```
+
+**例**: "PCIe"を含むパターンにマッチしているログ数をカウント
+```sql
+SELECT 
+    rp.id as pattern_id,
+    COALESCE(rp.regex_rule, rp.manual_regex_rule) as pattern,
+    COUNT(le.id) as log_count
+FROM regex_patterns rp
+LEFT JOIN log_entries le ON rp.id = le.pattern_id
+WHERE rp.regex_rule LIKE '%PCIe%' 
+   OR rp.manual_regex_rule LIKE '%PCIe%'
+GROUP BY rp.id
+ORDER BY log_count DESC;
+```
+
+### パターンごとのログ数を一覧表示（上位N件）
+
+```sql
+-- パターンごとのログエントリ数をカウント（多い順）
+SELECT 
+    rp.id as pattern_id,
+    COALESCE(rp.regex_rule, rp.manual_regex_rule) as pattern,
+    rp.label,
+    rp.sample_message,
+    COUNT(le.id) as log_count
+FROM regex_patterns rp
+LEFT JOIN log_entries le ON rp.id = le.pattern_id
+GROUP BY rp.id
+ORDER BY log_count DESC
+LIMIT 20;
+```
+
+### ラベル別のパターン数とログ数
+
+```sql
+-- ラベル（normal/abnormal/unknown/ignore）ごとのパターン数とログ数
+SELECT 
+    rp.label,
+    COUNT(DISTINCT rp.id) as pattern_count,
+    COUNT(le.id) as log_count
+FROM regex_patterns rp
+LEFT JOIN log_entries le ON rp.id = le.pattern_id
+GROUP BY rp.label
+ORDER BY log_count DESC;
+```
+
+### 手動パターン vs 自動生成パターンの比較
+
+```sql
+-- 手動パターンと自動生成パターンのログ数を比較
+SELECT 
+    CASE 
+        WHEN rp.manual_regex_rule IS NOT NULL THEN 'manual'
+        ELSE 'auto'
+    END as pattern_type,
+    COUNT(DISTINCT rp.id) as pattern_count,
+    COUNT(le.id) as log_count
+FROM regex_patterns rp
+LEFT JOIN log_entries le ON rp.id = le.pattern_id
+GROUP BY pattern_type;
+```
+
+### 特定のパターンにマッチしているログエントリの詳細
+
+```sql
+-- 特定のパターンIDにマッチしているログエントリの詳細を取得
+SELECT 
+    le.id as log_id,
+    le.ts,
+    le.host,
+    le.component,
+    le.message,
+    le.classification,
+    le.is_known
+FROM log_entries le
+WHERE le.pattern_id = <pattern_id>
+ORDER BY le.ts DESC
+LIMIT 100;
+```
+
+**例**: パターンID 100にマッチしているログの詳細
+```sql
+SELECT 
+    le.id as log_id,
+    le.ts,
+    le.host,
+    le.component,
+    le.message,
+    le.classification
+FROM log_entries le
+WHERE le.pattern_id = 100
+ORDER BY le.ts DESC
+LIMIT 100;
+```
+
