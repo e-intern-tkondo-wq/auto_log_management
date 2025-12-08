@@ -103,9 +103,9 @@ python3 scripts/add_threshold_rule.py \
   --rule-type threshold \
   --field-name available_bandwidth \
   --op '<' \
-  --threshold 30.0 \
+  --threshold 10.0 \
   --severity warning \
-  --message "PCIe bandwidth < 30 Gb/s" \
+  --message "PCIe bandwidth < 10 Gb/s" \
   --db db/monitor.db
 ```
 
