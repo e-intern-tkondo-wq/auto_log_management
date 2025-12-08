@@ -347,10 +347,21 @@ sqlite3 db/monitor.db "SELECT le.id, le.message, aa.response FROM log_entries le
 python3 src/cli_tools.py stats --db db/monitor.db
 ```
 
-### 9-2. アラートの確認
+### 9-2. アラートの確認（リアルタイム閲覧サーバ）
 
+#### 9-2-1. サーバ起動
 ```bash
-# アラート一覧を確認
+# 簡易アラート閲覧サーバを起動（デフォルト: http://127.0.0.1:8000/view）
+python3 scripts/alerts_server.py --db db/monitor.db --host 0.0.0.0 --port 8000
+```
+
+#### 9-2-2. ブラウザで確認
+- ブラウザで `http://localhost:8000/view` を開く（5秒ごとに自動更新）
+- APIで確認する場合: `http://localhost:8000/alerts?limit=50`（JSON）
+
+#### 9-2-3. CLIで確認（補助）
+```bash
+# アラート一覧（直近20件）
 sqlite3 db/monitor.db "SELECT a.id, a.alert_type, a.status, le.id as log_id, le.classification, le.message FROM alerts a JOIN log_entries le ON a.log_id = le.id ORDER BY a.created_at DESC LIMIT 20;"
 ```
 
@@ -376,17 +387,6 @@ for i in {103..116}; do
   echo "Processing 172.20.224.$i.log-20250714..."
   python3 src/ingest.py log_flower/bootlog/172.20.224.$i.log-20250714 --db db/monitor.db -v
 done
-```
-
-**注意:** 105と107は日付が異なる可能性があります。実際のファイル名を確認してください。
-
-```bash
-# 実際のファイル名を確認
-ls -la log_flower/bootlog/172.20.224.*.log-*
-
-# 105と107の実際のファイル名で取り込み
-python3 src/ingest.py log_flower/bootlog/172.20.224.105.log-20251015 --db db/monitor.db -v
-python3 src/ingest.py log_flower/bootlog/172.20.224.107.log-20250805 --db db/monitor.db -v
 ```
 
 ### 10-2. 各取り込み後の確認
