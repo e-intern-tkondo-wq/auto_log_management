@@ -397,6 +397,135 @@ def add_pattern_from_log(db_path: str, log_id: int, label: str = 'normal',
     return pattern_id
 
 
+def reprocess_pattern(db_path: str, pattern_id: int, verbose: bool = False):
+    """
+    既存のログエントリを指定されたパターンにマッチさせて再処理
+    パラメータ抽出と異常判定を実行
+    
+    Args:
+        db_path: データベースパス
+        pattern_id: パターンID
+        verbose: 詳細出力するかどうか
+    """
+    import re
+    from src.param_extractor import ParamExtractor
+    from src.anomaly_detector import AnomalyDetector
+    
+    db = Database(db_path)
+    conn = db.get_connection()
+    cursor = conn.cursor()
+    
+    # パターン情報を取得
+    cursor.execute("""
+        SELECT id, regex_rule, manual_regex_rule, label, severity
+        FROM regex_patterns
+        WHERE id = ?
+    """, (pattern_id,))
+    
+    pattern_row = cursor.fetchone()
+    if not pattern_row:
+        print(f"Error: Pattern {pattern_id} not found")
+        db.close()
+        sys.exit(1)
+    
+    # 使用する正規表現パターンを決定
+    pattern_to_use = pattern_row['manual_regex_rule'] or pattern_row['regex_rule']
+    if not pattern_to_use:
+        print(f"Error: Pattern {pattern_id} has no regex rule")
+        db.close()
+        sys.exit(1)
+    
+    # パターンをコンパイル
+    try:
+        compiled_pattern = re.compile(pattern_to_use)
+    except re.error as e:
+        print(f"Error: Invalid regex pattern: {e}")
+        db.close()
+        sys.exit(1)
+    
+    # すべてのログエントリを取得して、パターンにマッチするものを再処理
+    # 既にこのパターンに紐付いているログ、またはマッチする可能性のあるログを処理
+    cursor.execute("""
+        SELECT id, message, classification, is_known
+        FROM log_entries
+        ORDER BY id
+    """)
+    
+    logs = cursor.fetchall()
+    
+    param_extractor = ParamExtractor()
+    anomaly_detector = AnomalyDetector(db)
+    
+    matched_count = 0
+    param_extracted_count = 0
+    abnormal_detected_count = 0
+    
+    for log_row in logs:
+        log_id = log_row['id']
+        message = log_row['message']
+        
+        # パターンにマッチするかチェック
+        if compiled_pattern.search(message):
+            matched_count += 1
+            
+            # ログエントリを更新（is_known=1に設定）
+            classification = pattern_row['label']
+            if classification == 'unknown':
+                classification = 'normal'
+            
+            cursor.execute("""
+                UPDATE log_entries
+                SET pattern_id = ?,
+                    is_known = 1,
+                    classification = ?,
+                    severity = ?,
+                    updated_at = CURRENT_TIMESTAMP
+                WHERE id = ?
+            """, (pattern_id, classification, pattern_row['severity'], log_id))
+            
+            # 既存のパラメータを削除（再抽出のため）
+            cursor.execute("DELETE FROM log_params WHERE log_id = ?", (log_id,))
+            
+            # パラメータ抽出
+            params = param_extractor.extract_params(pattern_to_use, message)
+            if params:
+                param_extracted_count += 1
+                for param_name, param_data in params.items():
+                    cursor.execute("""
+                        INSERT INTO log_params
+                        (log_id, param_name, param_value_num, param_value_text)
+                        VALUES (?, ?, ?, ?)
+                    """, (log_id, param_name, param_data['num'], param_data['text']))
+            
+            # 異常判定を実行
+            anomaly_info = anomaly_detector.check_anomaly(log_id, pattern_id)
+            if anomaly_info:
+                abnormal_detected_count += 1
+                cursor.execute("""
+                    UPDATE log_entries
+                    SET classification = ?,
+                        severity = ?,
+                        anomaly_reason = ?
+                    WHERE id = ?
+                """, (
+                    anomaly_info['classification'],
+                    anomaly_info['severity'],
+                    anomaly_info['anomaly_reason'],
+                    log_id
+                ))
+                if verbose:
+                    print(f"Log {log_id}: abnormal detected - {anomaly_info['anomaly_reason']}")
+    
+    conn.commit()
+    
+    print(f"Reprocessed pattern {pattern_id}")
+    print(f"  Matched logs: {matched_count}")
+    print(f"  Logs with parameters extracted: {param_extracted_count}")
+    print(f"  Logs marked as abnormal: {abnormal_detected_count}")
+    
+    db.close()
+
+
 def main():
     """コマンドラインエントリーポイント"""
     import argparse
@@ -450,6 +579,13 @@ def main():
     parser_from_log.add_argument('--note', help='Note text')
     parser_from_log.add_argument('--db', default='db/monitor.db', help='Database path')
     
+    # reprocess-pattern コマンド
+    parser_reprocess = subparsers.add_parser('reprocess-pattern', 
+                                             help='Reprocess existing logs to match a pattern and extract parameters')
+    parser_reprocess.add_argument('pattern_id', type=int, help='Pattern ID to reprocess')
+    parser_reprocess.add_argument('--db', default='db/monitor.db', help='Database path')
+    parser_reprocess.add_argument('-v', '--verbose', action='store_true', help='Verbose output')
+    
     args = parser.parse_args()
     
     if not args.command:
@@ -469,6 +605,8 @@ def main():
                    args.label, args.severity, args.component, args.note, args.update)
     elif args.command == 'add-pattern-from-log':
         add_pattern_from_log(args.db, args.log_id, args.label, args.severity, args.note)
+    elif args.command == 'reprocess-pattern':
+        reprocess_pattern(args.db, args.pattern_id, args.verbose)
 
 
 if __name__ == '__main__':

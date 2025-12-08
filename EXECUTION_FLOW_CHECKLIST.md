@@ -87,6 +87,23 @@ PATTERN_ID=$(sqlite3 db/monitor.db "SELECT id FROM regex_patterns WHERE sample_m
 echo "Pattern ID: $PATTERN_ID"
 ```
 
+### 3-3. 既存のログを新しいパターンにマッチさせて再処理
+
+**重要**: ステップ2で取り込んだログは、この時点ではまだパターンが存在しなかったため、`is_known=0`として保存されています。パターンを追加した後、既存のログをこのパターンにマッチさせて、パラメータ抽出と異常判定を実行する必要があります。
+
+```bash
+# パターンIDを取得（前ステップで取得済みの場合）
+PATTERN_ID=$(sqlite3 db/monitor.db "SELECT id FROM regex_patterns WHERE sample_message LIKE '%PCIe bandwidth%' ORDER BY id DESC LIMIT 1;")
+
+# 既存のログを再処理（パラメータ抽出と異常判定を実行）
+python3 src/cli_tools.py reprocess-pattern $PATTERN_ID --db db/monitor.db -v
+```
+
+**確認ポイント:**
+- 既存のログがパターンにマッチしたか
+- パラメータが抽出されたか
+- 異常判定が実行されたか
+
 ---
 
 ## ステップ4: PCIe帯域幅の閾値ルール追加
@@ -103,7 +120,7 @@ python3 scripts/add_threshold_rule.py \
   --rule-type threshold \
   --field-name available_bandwidth \
   --op '<' \
-  --threshold 10000.0 \
+  --threshold 1000.0 \
   --severity warning \
   --message "PCIe bandwidth < 10 Gb/s" \
   --db db/monitor.db
@@ -118,6 +135,29 @@ python3 scripts/add_threshold_rule.py \
 ```bash
 # 追加したルールを確認
 sqlite3 db/monitor.db "SELECT * FROM pattern_rules WHERE pattern_id = $PATTERN_ID;"
+```
+
+### 4-3. 閾値ルール追加後の既存ログの再処理
+
+**重要**: 閾値ルールを追加した後、既存のログに対して異常判定を再実行する必要があります。これにより、既に取り込まれているログが閾値違反でabnormalと判定されます。
+
+```bash
+# パターンIDを取得
+PATTERN_ID=$(sqlite3 db/monitor.db "SELECT id FROM regex_patterns WHERE sample_message LIKE '%PCIe bandwidth%' ORDER BY id DESC LIMIT 1;")
+
+# 既存のログを再処理（異常判定を再実行）
+python3 src/cli_tools.py reprocess-pattern $PATTERN_ID --db db/monitor.db -v
+```
+
+**確認ポイント:**
+- 閾値違反のログがabnormalと判定されたか
+- `anomaly_reason`が正しく設定されたか
+
+### 4-4. 閾値違反ログの確認
+
+```bash
+# 閾値違反でabnormalと判定されたログを確認
+sqlite3 db/monitor.db "SELECT le.id, le.ts, le.host, le.classification, le.severity, le.anomaly_reason, le.message, lp.param_value_num FROM log_entries le JOIN log_params lp ON le.id = lp.log_id WHERE lp.param_name = 'available_bandwidth' AND le.classification = 'abnormal' LIMIT 10;"
 ```
 
 ---
