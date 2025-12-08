@@ -79,8 +79,14 @@ class LogIngester:
                         pattern_id = None
                         is_new_pattern = False
                         
-                        if regex_rule:
-                            # まず既存パターンを検索（regex_rule と manual_regex_rule の両方をチェック）
+                        # 手動パターンを先にチェック（named capture groupを含むパターンを優先）
+                        manual_pattern_id = self._check_manual_patterns(cursor, parsed['message'])
+                        if manual_pattern_id:
+                            pattern_id = manual_pattern_id
+                            is_new_pattern = False
+                            stats['existing_patterns'] += 1
+                        elif regex_rule:
+                            # 手動パターンがマッチしない場合、既存パターンを検索（regex_rule と manual_regex_rule の両方をチェック）
                             pattern_id, is_new_pattern = self._find_or_create_pattern(
                                 cursor, regex_rule, parsed['message'], verbose
                             )
@@ -89,14 +95,6 @@ class LogIngester:
                                     stats['new_patterns'] += 1
                                 else:
                                     stats['existing_patterns'] += 1
-                        
-                        # 手動パターンもチェック（元のメッセージに対して直接マッチング）
-                        if not pattern_id or is_new_pattern:
-                            manual_pattern_id = self._check_manual_patterns(cursor, parsed['message'])
-                            if manual_pattern_id:
-                                pattern_id = manual_pattern_id
-                                is_new_pattern = False
-                                stats['existing_patterns'] += 1
                         
                         # 既知か未知かを判断
                         is_known = 1 if pattern_id and not is_new_pattern else 0

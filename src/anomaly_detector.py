@@ -96,7 +96,7 @@ class AnomalyDetector:
         個別のルールを評価
         
         Args:
-            rule: ルール情報（データベース行）
+            rule: ルール情報（データベース行、sqlite3.Rowオブジェクト）
             message: ログメッセージ
             params: 抽出されたパラメータ
             
@@ -105,7 +105,8 @@ class AnomalyDetector:
         """
         rule_type = rule['rule_type']
         op = rule['op']
-        field_name = rule.get('field_name')
+        # sqlite3.Rowオブジェクトなので、辞書のようにアクセス
+        field_name = rule['field_name'] if rule['field_name'] is not None else None
         
         if rule_type == 'threshold':
             # しきい値チェック（パラメータが必要）
