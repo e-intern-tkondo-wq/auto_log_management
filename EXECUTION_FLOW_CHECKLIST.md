@@ -33,6 +33,19 @@ rm db/monitor.db
 python3 -c "from src.database import Database; Database('db/monitor.db')"
 ```
 
+### 1-3. 実行後の確認クエリ（DB初期状態）
+
+```bash
+# DBファイルが存在するかとサイズを確認
+ls -lh db/monitor.db
+
+# integrityチェック
+sqlite3 db/monitor.db "PRAGMA integrity_check;"
+
+# テーブル件数の初期値を確認（空かどうか）
+sqlite3 db/monitor.db "SELECT name, (SELECT COUNT(*) FROM sqlite_master WHERE name = 'log_entries') AS has_log_entries FROM sqlite_master WHERE type='table' LIMIT 5;"
+```
+
 ---
 
 ## ステップ2: 172.20.224.101.log-20250714 の取り込みとテンプレート作成
@@ -56,6 +69,22 @@ python3 src/cli_tools.py stats --db db/monitor.db
 
 # 未知パターンの確認
 python3 src/cli_tools.py show-unknown --db db/monitor.db --limit 20
+```
+
+### 2-3. 実行後の確認クエリ（取り込み差分と直近ログ）
+
+```bash
+# 直近10件のログを確認（取り込み結果が載っているか）
+sqlite3 db/monitor.db "SELECT id, host, classification, pattern_id, message FROM log_entries ORDER BY id DESC LIMIT 10;"
+
+# 分類別件数の推移を確認
+sqlite3 db/monitor.db "SELECT classification, COUNT(*) AS cnt FROM log_entries GROUP BY classification ORDER BY cnt DESC;"
+
+# 新規パターン数（累計）を確認
+sqlite3 db/monitor.db "SELECT COUNT(*) AS pattern_total FROM regex_patterns;"
+
+# 取り込み対象ホストの件数を確認
+sqlite3 db/monitor.db "SELECT host, COUNT(*) AS cnt FROM log_entries GROUP BY host ORDER BY cnt DESC LIMIT 5;"
 ```
 
 ---
@@ -103,6 +132,19 @@ python3 src/cli_tools.py reprocess-pattern $PATTERN_ID --db db/monitor.db -v
 - 既存のログがパターンにマッチしたか
 - パラメータが抽出されたか
 - 異常判定が実行されたか
+
+### 3-4. 実行後の確認クエリ（パターン紐付けとパラメータ抽出）
+
+```bash
+# 新パターンに紐付いたログ件数
+sqlite3 db/monitor.db "SELECT pattern_id, COUNT(*) AS cnt FROM log_entries WHERE pattern_id = (SELECT id FROM regex_patterns WHERE sample_message LIKE '%PCIe bandwidth%' ORDER BY id DESC LIMIT 1) GROUP BY pattern_id;"
+
+# 抽出されたパラメータの確認（available_bandwidth）
+sqlite3 db/monitor.db "SELECT le.id, le.host, lp.param_value_num, le.classification FROM log_entries le JOIN log_params lp ON le.id = lp.log_id WHERE lp.param_name = 'available_bandwidth' ORDER BY le.id DESC LIMIT 10;"
+
+# is_known の変化を確認
+sqlite3 db/monitor.db "SELECT is_known, COUNT(*) AS cnt FROM log_entries GROUP BY is_known;"
+```
 
 ---
 
@@ -160,6 +202,19 @@ python3 src/cli_tools.py reprocess-pattern $PATTERN_ID --db db/monitor.db -v
 sqlite3 db/monitor.db "SELECT le.id, le.ts, le.host, le.classification, le.severity, le.anomaly_reason, le.message, lp.param_value_num FROM log_entries le JOIN log_params lp ON le.id = lp.log_id WHERE lp.param_name = 'available_bandwidth' AND le.classification = 'abnormal' LIMIT 10;"
 ```
 
+### 4-5. 実行後の確認クエリ（閾値マッチ結果）
+
+```bash
+# 閾値違反でabnormalとなった件数
+sqlite3 db/monitor.db "SELECT COUNT(*) FROM log_entries WHERE pattern_id = (SELECT id FROM regex_patterns WHERE sample_message LIKE '%PCIe bandwidth%' ORDER BY id DESC LIMIT 1) AND classification = 'abnormal';"
+
+# anomaly_reason がセットされたレコードを確認
+sqlite3 db/monitor.db "SELECT id, severity, anomaly_reason, message FROM log_entries WHERE pattern_id = (SELECT id FROM regex_patterns WHERE sample_message LIKE '%PCIe bandwidth%' ORDER BY id DESC LIMIT 1) AND anomaly_reason IS NOT NULL ORDER BY id DESC LIMIT 10;"
+
+# 閾値ルールの有効/無効状態を確認
+sqlite3 db/monitor.db "SELECT id, is_active, severity_if_match, created_at FROM pattern_rules WHERE pattern_id = (SELECT id FROM regex_patterns WHERE sample_message LIKE '%PCIe bandwidth%' ORDER BY id DESC LIMIT 1);"
+```
+
 ---
 
 ## ステップ5: ログID 1の正規化パターンをunknownからabnormalに変更
@@ -206,6 +261,16 @@ sqlite3 db/monitor.db "UPDATE log_entries SET classification = 'abnormal', sever
 sqlite3 db/monitor.db "SELECT id, pattern_id, classification, severity, message FROM log_entries WHERE id = 1;"
 ```
 
+### 5-4. 実行後の確認クエリ（ラベル変更の影響範囲）
+
+```bash
+# パターン単位での分類内訳を確認
+sqlite3 db/monitor.db "SELECT classification, COUNT(*) AS cnt FROM log_entries WHERE pattern_id = (SELECT pattern_id FROM log_entries WHERE id = 1) GROUP BY classification;"
+
+# 異常化したログのサンプルを確認
+sqlite3 db/monitor.db "SELECT id, host, severity, message FROM log_entries WHERE pattern_id = (SELECT pattern_id FROM log_entries WHERE id = 1) ORDER BY id DESC LIMIT 10;"
+```
+
 ---
 
 ## ステップ6: 172.20.224.102.log-20250714 の取り込み
@@ -246,6 +311,19 @@ python3 src/cli_tools.py show-unknown --db db/monitor.db --limit 20
 
 # より詳細な情報を確認
 sqlite3 db/monitor.db "SELECT id, ts, host, component, message FROM log_entries WHERE classification = 'unknown' ORDER BY id DESC LIMIT 20;"
+```
+
+### 6-5. 実行後の確認クエリ（ホスト別増分とabnormal詳細）
+
+```bash
+# 102ホストの取り込み件数（累計）
+sqlite3 db/monitor.db "SELECT COUNT(*) FROM log_entries WHERE host = '172.20.224.102';"
+
+# 直近のabnormalログを確認
+sqlite3 db/monitor.db "SELECT id, ts, host, component, severity, anomaly_reason FROM log_entries WHERE classification = 'abnormal' ORDER BY id DESC LIMIT 15;"
+
+# unknown件数の推移確認
+sqlite3 db/monitor.db "SELECT COUNT(*) AS unknown_cnt FROM log_entries WHERE classification = 'unknown';"
 ```
 
 ---
@@ -296,6 +374,19 @@ python3 src/cli_tools.py map-log 100 $IXGBE_PATTERN_ID --db db/monitor.db
 
 **注意:** 複数のログを紐付ける場合は、各ログIDに対して `map-log` コマンドを実行する必要があります。
 
+### 7-4. 実行後の確認クエリ（紐付け結果の反映）
+
+```bash
+# 手動で紐付けたパターンの分類内訳
+sqlite3 db/monitor.db "SELECT classification, COUNT(*) AS cnt FROM log_entries WHERE pattern_id = $IXGBE_PATTERN_ID GROUP BY classification;"
+
+# unknown がどれだけ減ったか確認
+sqlite3 db/monitor.db "SELECT COUNT(*) AS unknown_cnt FROM log_entries WHERE classification = 'unknown';"
+
+# 直近のパターン紐付けログを確認
+sqlite3 db/monitor.db "SELECT id, host, component, message FROM log_entries WHERE pattern_id = $IXGBE_PATTERN_ID ORDER BY id DESC LIMIT 10;"
+```
+
 ---
 
 ## ステップ8: LLMアナライザーによるunknownログの処理
@@ -336,6 +427,19 @@ python3 src/llm_analyzer.py --db db/monitor.db --log-id 200 --auto-process
 sqlite3 db/monitor.db "SELECT le.id, le.message, aa.response FROM log_entries le JOIN ai_analyses aa ON le.id = aa.log_id ORDER BY aa.created_at DESC LIMIT 10;"
 ```
 
+### 8-5. 実行後の確認クエリ（LLM処理の成果確認）
+
+```bash
+# LLMでauto追加されたパターン数
+sqlite3 db/monitor.db "SELECT COUNT(*) FROM regex_patterns WHERE created_by_ai = 1;"
+
+# LLMでabnormalと判定されたログを確認
+sqlite3 db/monitor.db "SELECT le.id, le.host, le.classification, le.severity, le.message FROM log_entries le JOIN ai_analyses aa ON le.id = aa.log_id WHERE le.classification = 'abnormal' ORDER BY aa.created_at DESC LIMIT 10;"
+
+# LLM処理済みのunknown残件を確認
+sqlite3 db/monitor.db "SELECT COUNT(*) AS remaining_unknown FROM log_entries WHERE classification = 'unknown';"
+```
+
 ---
 
 ## ステップ9: 統計情報とアラートの確認
@@ -373,6 +477,19 @@ sqlite3 db/monitor.db "SELECT classification, COUNT(*) as count FROM log_entries
 
 # abnormalログの詳細
 sqlite3 db/monitor.db "SELECT id, ts, host, component, classification, severity, anomaly_reason FROM log_entries WHERE classification = 'abnormal' ORDER BY id DESC LIMIT 20;"
+```
+
+### 9-4. 実行後の確認クエリ（アラートと統計のスナップショット）
+
+```bash
+# アラートステータス別件数
+sqlite3 db/monitor.db "SELECT status, COUNT(*) FROM alerts GROUP BY status;"
+
+# 直近のアラートと紐付くログの概要
+sqlite3 db/monitor.db "SELECT a.id AS alert_id, a.alert_type, a.status, le.id AS log_id, le.classification, le.severity FROM alerts a JOIN log_entries le ON a.log_id = le.id ORDER BY a.created_at DESC LIMIT 10;"
+
+# 総ログ件数とパターン件数のスナップショット
+sqlite3 db/monitor.db "SELECT (SELECT COUNT(*) FROM log_entries) AS log_total, (SELECT COUNT(*) FROM regex_patterns) AS pattern_total;"
 ```
 
 ---
@@ -435,6 +552,19 @@ python3 src/cli_tools.py map-log <LOG_ID> <PATTERN_ID> --db db/monitor.db
 python3 src/llm_analyzer.py --db db/monitor.db --limit 20
 ```
 
+### 10-4. 実行後の確認クエリ（バッチ取り込み後の整合性）
+
+```bash
+# ホスト別件数を確認（103〜116の取り込み状況）
+sqlite3 db/monitor.db "SELECT host, COUNT(*) AS cnt FROM log_entries WHERE host LIKE '172.20.224.%' GROUP BY host ORDER BY host;"
+
+# unknown・abnormalの現在値
+sqlite3 db/monitor.db "SELECT classification, COUNT(*) AS cnt FROM log_entries GROUP BY classification;"
+
+# 直近20件で未分類が紛れていないか確認
+sqlite3 db/monitor.db "SELECT id, host, classification, message FROM log_entries ORDER BY id DESC LIMIT 20;"
+```
+
 ---
 
 ## ステップ11: 最終確認
@@ -472,6 +602,16 @@ sqlite3 db/monitor.db "SELECT a.id, a.alert_type, a.status, COUNT(*) as count FR
 
 # pending状態のアラートを確認
 sqlite3 db/monitor.db "SELECT a.id, a.alert_type, le.id as log_id, le.classification, le.message FROM alerts a JOIN log_entries le ON a.log_id = le.id WHERE a.status = 'pending' ORDER BY a.created_at DESC LIMIT 20;"
+```
+
+### 11-5. 実行後の確認クエリ（最終スナップショット）
+
+```bash
+# 全体サマリ（ログ総数・パターン総数・unknown残数）
+sqlite3 db/monitor.db "SELECT (SELECT COUNT(*) FROM log_entries) AS log_total, (SELECT COUNT(*) FROM regex_patterns) AS pattern_total, (SELECT COUNT(*) FROM log_entries WHERE classification = 'unknown') AS unknown_remaining;"
+
+# 異常ログの主要項目を最終確認
+sqlite3 db/monitor.db "SELECT id, ts, host, component, severity, anomaly_reason FROM log_entries WHERE classification = 'abnormal' ORDER BY id DESC LIMIT 15;"
 ```
 
 ---
@@ -573,4 +713,3 @@ LIMIT 20;
 4. パターンマッチングが正しく動作しているか
 5. 閾値チェックが正しく動作しているか
 6. LLMアナライザーが正しく動作しているか
-
