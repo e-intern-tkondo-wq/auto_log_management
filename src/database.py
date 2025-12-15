@@ -47,6 +47,7 @@ class Database:
                 label TEXT NOT NULL DEFAULT 'normal',
                 severity TEXT,
                 note TEXT,
+                has_params INTEGER DEFAULT 0,
                 first_seen_at DATETIME NOT NULL,
                 last_seen_at DATETIME NOT NULL,
                 total_count INTEGER NOT NULL DEFAULT 1,
@@ -77,6 +78,7 @@ class Database:
                         label TEXT NOT NULL DEFAULT 'normal',
                         severity TEXT,
                         note TEXT,
+                        has_params INTEGER DEFAULT 0,
                         first_seen_at DATETIME NOT NULL,
                         last_seen_at DATETIME NOT NULL,
                         total_count INTEGER NOT NULL DEFAULT 1,
@@ -87,13 +89,24 @@ class Database:
                     )
                 """)
                 
-                # 2. 既存データをコピー
-                cursor.execute("""
-                    INSERT INTO regex_patterns_migrated 
-                    SELECT id, regex_rule, NULL, sample_message, label, severity, note,
-                           first_seen_at, last_seen_at, total_count, created_at, updated_at
-                    FROM regex_patterns
-                """)
+                # 2. 既存データをコピー（has_paramsも含める）
+                # 既存のhas_paramsカラムがあるかチェック
+                has_params_in_old = any(col[1] == 'has_params' for col in columns)
+                if has_params_in_old:
+                    cursor.execute("""
+                        INSERT INTO regex_patterns_migrated 
+                        SELECT id, regex_rule, manual_regex_rule, sample_message, label, severity, note, 
+                               COALESCE(has_params, 0), first_seen_at, last_seen_at, total_count, created_at, updated_at
+                        FROM regex_patterns
+                    """)
+                else:
+                    # has_paramsカラムがない場合は0で初期化
+                    cursor.execute("""
+                        INSERT INTO regex_patterns_migrated 
+                        SELECT id, regex_rule, NULL, sample_message, label, severity, note, 0,
+                               first_seen_at, last_seen_at, total_count, created_at, updated_at
+                        FROM regex_patterns
+                    """)
                 
                 # 3. 外部キー制約を一時的に無効化
                 cursor.execute("PRAGMA foreign_keys=OFF")
@@ -116,6 +129,28 @@ class Database:
             if "already exists" not in str(e) and "no such table" not in str(e):
                 print(f"Warning: Migration issue: {e}", file=__import__('sys').stderr)
             pass
+        
+        # has_paramsカラムのマイグレーション（既存テーブルに追加）
+        try:
+            cursor.execute("PRAGMA table_info(regex_patterns)")
+            columns = cursor.fetchall()
+            has_params_column = any(col[1] == 'has_params' for col in columns)
+            if not has_params_column:
+                cursor.execute("ALTER TABLE regex_patterns ADD COLUMN has_params INTEGER DEFAULT 0")
+                # 既存のパターンに対してhas_paramsを設定
+                # manual_regex_ruleまたはregex_ruleにnamed capture groupが含まれているかチェック
+                cursor.execute("SELECT id, regex_rule, manual_regex_rule FROM regex_patterns")
+                patterns = cursor.fetchall()
+                from src.param_extractor import has_named_capture_groups
+                for pattern in patterns:
+                    pattern_to_check = pattern['manual_regex_rule'] or pattern['regex_rule']
+                    if pattern_to_check and has_named_capture_groups(pattern_to_check):
+                        cursor.execute("UPDATE regex_patterns SET has_params = 1 WHERE id = ?", (pattern['id'],))
+                self.conn.commit()
+        except sqlite3.OperationalError as e:
+            # 既に追加済みの場合はスキップ
+            if "duplicate column" not in str(e).lower():
+                print(f"Warning: Migration issue for has_params: {e}", file=__import__('sys').stderr)
         
         # 2. log_entries テーブル（ログ本体）
         cursor.execute("""

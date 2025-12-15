@@ -91,7 +91,11 @@ sqlite3 db/monitor.db "SELECT host, COUNT(*) AS cnt FROM log_entries GROUP BY ho
 
 ## ステップ3: PCIe帯域幅パターンの追加
 
+> **参考**: 他のパターンでも変数化を実行したい場合は、[パターン変数化ワークフローガイド](../docs/guides/PATTERN_VARIABILIZATION_WORKFLOW.md)を参照してください。一般的な変数化の手順（named capture groupの追加方法、パターン追加、閾値ルール設定など）を詳しく説明しています。
+
 ### 3-1. PCIe帯域幅パターンの追加
+
+以下のコマンドでは、正規表現パターンにnamed capture group `(?P<available_bandwidth>\d+\.\d+)` を追加して、PCIe帯域幅の値を変数として抽出できるようにしています。
 
 ```bash
 python3 src/cli_tools.py add-pattern \
@@ -107,6 +111,9 @@ python3 src/cli_tools.py add-pattern \
 **確認ポイント:**
 - パターンが正常に追加されたか
 - パターンIDをメモしておく
+- コマンド出力に「Has parameters: Yes (available_bandwidth)」と表示されることを確認（named capture groupが正しく検出されている）
+
+**注意:** `add-pattern`コマンド実行時に、正規表現パターンにnamed capture groupが含まれているかどうかを自動で検出し、`has_params`フラグが設定されます。
 
 ### 3-2. 追加したパターンIDの確認
 
@@ -114,6 +121,19 @@ python3 src/cli_tools.py add-pattern \
 # PCIe帯域幅パターンのIDを取得
 PATTERN_ID=$(sqlite3 db/monitor.db "SELECT id FROM regex_patterns WHERE sample_message LIKE '%PCIe bandwidth%' ORDER BY id DESC LIMIT 1;")
 echo "Pattern ID: $PATTERN_ID"
+
+# パターンの詳細情報を確認（has_paramsフラグも含む）
+sqlite3 db/monitor.db "
+SELECT 
+    id,
+    CASE WHEN manual_regex_rule IS NOT NULL THEN manual_regex_rule ELSE regex_rule END as pattern,
+    sample_message,
+    note,
+    has_params,
+    CASE WHEN has_params = 1 THEN 'Yes' ELSE 'No' END as has_parameters
+FROM regex_patterns
+WHERE id = $PATTERN_ID;
+"
 ```
 
 ### 3-3. 既存のログを新しいパターンにマッチさせて再処理
@@ -138,6 +158,9 @@ python3 src/cli_tools.py reprocess-pattern $PATTERN_ID --db db/monitor.db -v
 ```bash
 # 新パターンに紐付いたログ件数
 sqlite3 db/monitor.db "SELECT pattern_id, COUNT(*) AS cnt FROM log_entries WHERE pattern_id = (SELECT id FROM regex_patterns WHERE sample_message LIKE '%PCIe bandwidth%' ORDER BY id DESC LIMIT 1) GROUP BY pattern_id;"
+
+# パターンのhas_paramsフラグを確認（パラメータ化されていることを確認）
+sqlite3 db/monitor.db "SELECT id, has_params, CASE WHEN has_params = 1 THEN 'Yes' ELSE 'No' END as has_parameters FROM regex_patterns WHERE sample_message LIKE '%PCIe bandwidth%' ORDER BY id DESC LIMIT 1;"
 
 # 抽出されたパラメータの確認（available_bandwidth）
 sqlite3 db/monitor.db "SELECT le.id, le.host, lp.param_value_num, le.classification FROM log_entries le JOIN log_params lp ON le.id = lp.log_id WHERE lp.param_name = 'available_bandwidth' ORDER BY le.id DESC LIMIT 10;"
@@ -353,6 +376,10 @@ python3 src/cli_tools.py add-pattern \
   --db db/monitor.db
 ```
 
+**確認ポイント:**
+- パターンが正常に追加されたか
+- コマンド出力で「Has parameters: No」と表示されることを確認（このパターンはnamed capture groupを使用していないため）
+
 ### 7-3. 追加したパターンにunknownログを紐付け
 
 ```bash
@@ -379,6 +406,9 @@ python3 src/cli_tools.py map-log 100 $IXGBE_PATTERN_ID --db db/monitor.db
 ```bash
 # 手動で紐付けたパターンの分類内訳
 sqlite3 db/monitor.db "SELECT classification, COUNT(*) AS cnt FROM log_entries WHERE pattern_id = $IXGBE_PATTERN_ID GROUP BY classification;"
+
+# パターンのhas_paramsフラグを確認
+sqlite3 db/monitor.db "SELECT id, has_params, CASE WHEN has_params = 1 THEN 'Yes' ELSE 'No' END as has_parameters FROM regex_patterns WHERE id = $IXGBE_PATTERN_ID;"
 
 # unknown がどれだけ減ったか確認
 sqlite3 db/monitor.db "SELECT COUNT(*) AS unknown_cnt FROM log_entries WHERE classification = 'unknown';"
@@ -541,6 +571,11 @@ python3 src/cli_tools.py add-pattern \
   --note "説明" \
   --db db/monitor.db
 
+# パターン追加時の確認: コマンド出力で「Has parameters: Yes」または「Has parameters: No」が表示されることを確認
+# パターンIDとhas_paramsフラグを確認
+PATTERN_ID=$(sqlite3 db/monitor.db "SELECT id FROM regex_patterns WHERE sample_message LIKE '%キーワード%' ORDER BY id DESC LIMIT 1;")
+sqlite3 db/monitor.db "SELECT id, has_params FROM regex_patterns WHERE id = $PATTERN_ID;"
+
 # ログをパターンに紐付け
 python3 src/cli_tools.py map-log <LOG_ID> <PATTERN_ID> --db db/monitor.db
 ```
@@ -631,8 +666,19 @@ sqlite3 db/monitor.db "PRAGMA integrity_check;"
 ### パターンがマッチしない
 
 ```bash
-# パターンの詳細を確認
-sqlite3 db/monitor.db "SELECT id, regex_rule, manual_regex_rule, sample_message FROM regex_patterns WHERE id = <PATTERN_ID>;"
+# パターンの詳細を確認（has_paramsフラグも含む）
+sqlite3 db/monitor.db "SELECT id, regex_rule, manual_regex_rule, sample_message, has_params FROM regex_patterns WHERE id = <PATTERN_ID>;"
+
+# パラメータ化されているかどうかも確認
+sqlite3 db/monitor.db "
+SELECT 
+    id,
+    CASE WHEN manual_regex_rule IS NOT NULL THEN manual_regex_rule ELSE regex_rule END as pattern,
+    has_params,
+    CASE WHEN has_params = 1 THEN 'Yes (parameterized)' ELSE 'No' END as parameter_status
+FROM regex_patterns 
+WHERE id = <PATTERN_ID>;
+"
 
 # ログメッセージとパターンを手動で確認
 python3 -c "
@@ -641,6 +687,12 @@ pattern = '正規表現パターン'
 message = 'ログメッセージ'
 if re.search(pattern, message):
     print('Match!')
+    # named capture groupがあれば抽出
+    match = re.search(pattern, message)
+    if match:
+        groups = match.groupdict()
+        if groups:
+            print(f'Extracted parameters: {groups}')
 else:
     print('No match')
 "
@@ -687,17 +739,23 @@ LIMIT 20;
 ### パターンの詳細確認
 
 ```sql
--- パターンの詳細
-SELECT id, regex_rule, manual_regex_rule, sample_message, label, severity, total_count 
+-- パターンの詳細（has_paramsフラグも含む）
+SELECT id, regex_rule, manual_regex_rule, sample_message, label, severity, has_params, total_count 
 FROM regex_patterns 
 WHERE id = <PATTERN_ID>;
 
 -- ラベル別のパターン一覧
-SELECT id, label, severity, sample_message 
+SELECT id, label, severity, has_params, sample_message 
 FROM regex_patterns 
 WHERE label = 'abnormal' 
 ORDER BY total_count DESC 
 LIMIT 20;
+
+-- パラメータ化されているパターンの一覧
+SELECT id, sample_message, note, has_params
+FROM regex_patterns
+WHERE has_params = 1
+ORDER BY id DESC;
 ```
 
 ---

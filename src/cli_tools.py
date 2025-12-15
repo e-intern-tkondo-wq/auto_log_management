@@ -296,14 +296,18 @@ def add_pattern(db_path: str, regex_rule: str, sample_message: str,
     existing = cursor.fetchone()
     if existing:
         if update_existing:
+            # named capture groupが含まれているかチェック
+            from src.param_extractor import has_named_capture_groups
+            has_params = 1 if has_named_capture_groups(regex_rule) else 0
             cursor.execute("""
                 UPDATE regex_patterns
                 SET label = ?,
                     severity = ?,
                     note = ?,
+                    has_params = ?,
                     updated_at = CURRENT_TIMESTAMP
                 WHERE id = ?
-            """, (label, severity, note, existing['id']))
+            """, (label, severity, note, has_params, existing['id']))
             conn.commit()
             print(f"Updated pattern {existing['id']}")
             db.close()
@@ -315,13 +319,18 @@ def add_pattern(db_path: str, regex_rule: str, sample_message: str,
             db.close()
             return existing['id']
     
+    # named capture groupが含まれているかチェック
+    from src.param_extractor import has_named_capture_groups, get_named_capture_group_names
+    has_params = 1 if has_named_capture_groups(regex_rule) else 0
+    param_names = get_named_capture_group_names(regex_rule) if has_params else []
+    
     # 新規パターンを追加（手動なので manual_regex_rule に格納、regex_rule は NULL）
     now = datetime.now()
     cursor.execute("""
         INSERT INTO regex_patterns
-        (regex_rule, manual_regex_rule, sample_message, label, severity, note, first_seen_at, last_seen_at, total_count)
-        VALUES (NULL, ?, ?, ?, ?, ?, ?, ?, 0)
-    """, (regex_rule, sample_message, label, severity, note, now, now))
+        (regex_rule, manual_regex_rule, sample_message, label, severity, note, has_params, first_seen_at, last_seen_at, total_count)
+        VALUES (NULL, ?, ?, ?, ?, ?, ?, ?, ?, 0)
+    """, (regex_rule, sample_message, label, severity, note, has_params, now, now))
     
     pattern_id = cursor.lastrowid
     conn.commit()
@@ -329,6 +338,10 @@ def add_pattern(db_path: str, regex_rule: str, sample_message: str,
     print(f"Successfully added pattern (ID: {pattern_id})")
     print(f"  Regex: {regex_rule[:80]}...")
     print(f"  Label: {label}, Severity: {severity}")
+    if has_params:
+        print(f"  Has parameters: Yes ({', '.join(param_names)})")
+    else:
+        print(f"  Has parameters: No")
     if component:
         print(f"  Component: {component}")
     if note:

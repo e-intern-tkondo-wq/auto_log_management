@@ -2,7 +2,52 @@
 パラメータ抽出: 正規表現パターンからnamed capture groupを抽出
 """
 import re
-from typing import Dict, Optional
+from typing import Dict, Optional, List
+
+
+def has_named_capture_groups(regex_rule: str) -> bool:
+    """
+    正規表現パターンにnamed capture groupが含まれているかチェック
+    
+    Args:
+        regex_rule: 正規表現パターン
+        
+    Returns:
+        named capture groupが含まれている場合True、そうでなければFalse
+    """
+    if not regex_rule:
+        return False
+    
+    try:
+        # named capture groupのパターン: (?P<name>...)
+        # Pythonの正規表現でnamed capture groupを検出
+        pattern = re.compile(r'\(\?P<[^>]+>')
+        return bool(pattern.search(regex_rule))
+    except re.error:
+        return False
+
+
+def get_named_capture_group_names(regex_rule: str) -> List[str]:
+    """
+    正規表現パターンからnamed capture groupの名前を取得
+    
+    Args:
+        regex_rule: 正規表現パターン
+        
+    Returns:
+        named capture groupの名前のリスト
+    """
+    if not regex_rule:
+        return []
+    
+    names = []
+    try:
+        # named capture groupのパターン: (?P<name>...)
+        pattern = re.compile(r'\(\?P<([^>]+)>')
+        matches = pattern.findall(regex_rule)
+        return matches
+    except re.error:
+        return []
 
 
 class ParamExtractor:
