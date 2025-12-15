@@ -109,7 +109,7 @@ python3 src/cli_tools.py add-pattern \
 ```
 
 **確認ポイント:**
-- パターンが正常に追加されたか
+- パターンが正常に追加されたかどうか
 - パターンIDをメモしておく
 - コマンド出力に「Has parameters: Yes (available_bandwidth)」と表示されることを確認（named capture groupが正しく検出されている）
 
