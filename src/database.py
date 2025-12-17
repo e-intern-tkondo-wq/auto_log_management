@@ -235,6 +235,21 @@ class Database:
             )
         """)
         
+        # 7. unique_log_entries テーブル（完全一致ログエントリ）
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS unique_log_entries (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                raw_line TEXT UNIQUE NOT NULL,
+                count INTEGER NOT NULL DEFAULT 1,
+                first_seen_at DATETIME NOT NULL,
+                last_seen_at DATETIME NOT NULL,
+                first_seen_file TEXT,
+                last_seen_file TEXT,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+        
         # インデックス作成
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_regex_patterns_regex_rule ON regex_patterns(regex_rule)")
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_regex_patterns_label ON regex_patterns(label)")
@@ -249,6 +264,7 @@ class Database:
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_alerts_status ON alerts(status)")
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_alerts_log_id ON alerts(log_id)")
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_ai_analyses_log_id ON ai_analyses(log_id)")
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_unique_log_entries_raw_line ON unique_log_entries(raw_line)")
         
         self.conn.commit()
     

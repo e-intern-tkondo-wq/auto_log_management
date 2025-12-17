@@ -386,7 +386,6 @@ python3 src/cli_tools.py add-pattern \
 # 追加したパターンIDを取得
 #ここのLIKE内の内容を決めるのが重要 　
 # パターンIDを取得（既に追加済みのixgbeパターンを利用）
-IXGBE_PATTERN_ID=$(sqlite3 db/monitor.db "SELECT id FROM regex_patterns WHERE sample_message LIKE '%ixgbe%' ORDER BY id DESC LIMIT 1;")
 
 # このパターンにマッチするunknownログのみを抽出して確認
 # （単純なLIKEだと過剰マッチするため、安全にフィルタする）

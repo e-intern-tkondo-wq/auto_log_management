@@ -15,7 +15,7 @@ import sqlite3
 import sys
 
 
-def filter_unknown_logs(db_path: str, regex_rule: str, limit: int = 200):
+def filter_unknown_logs(db_path: str, regex_rule: str, limit: int = 1000000):
     try:
         pattern = re.compile(regex_rule)
     except re.error as e:
@@ -57,7 +57,7 @@ def main():
     )
     parser.add_argument("--db", default="db/monitor.db", help="Database path")
     parser.add_argument("--regex", required=True, help="Regex used to search messages")
-    parser.add_argument("--limit", type=int, default=200, help="Rows to scan (default: 200)")
+    parser.add_argument("--limit", type=int, default=100000000, help="Rows to scan (default: 200)")
     args = parser.parse_args()
 
     filter_unknown_logs(args.db, args.regex, args.limit)

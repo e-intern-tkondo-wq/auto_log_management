@@ -211,13 +211,14 @@ If the log is normal and should be added to the pattern database, provide a rege
         
         conn.commit()
     
-    def process_unknown_logs(self, limit: int = 10, auto_add_pattern: bool = True) -> Dict:
+    def process_unknown_logs(self, limit: int = 10, auto_add_pattern: bool = True, host: Optional[str] = None) -> Dict:
         """
         未知ログを一括でLLM解析
         
         Args:
             limit: 処理するログ数の上限
             auto_add_pattern: LLMが正常と判断した場合に自動でパターンを追加するか
+            host: 特定のホストのログのみを対象にする場合のホスト名（例: '172.20.224.102'）
             
         Returns:
             処理結果:
@@ -234,20 +235,35 @@ If the log is normal and should be added to the pattern database, provide a rege
         cursor = conn.cursor()
         
         # 未知ログを取得（まだLLM解析されていないもの）
-        cursor.execute("""
-            SELECT le.id, le.ts, le.host, le.component, le.message, le.raw_line
-            FROM log_entries le
-            LEFT JOIN ai_analyses aa ON le.id = aa.log_id
-            WHERE le.is_known = 0
-              AND aa.id IS NULL
-            ORDER BY le.ts DESC
-            LIMIT ?
-        """, (limit,))
+        if host:
+            # 特定のhostのログのみを対象にする
+            cursor.execute("""
+                SELECT le.id, le.ts, le.host, le.component, le.message, le.raw_line
+                FROM log_entries le
+                LEFT JOIN ai_analyses aa ON le.id = aa.log_id
+                WHERE le.is_known = 0
+                  AND aa.id IS NULL
+                  AND le.host = ?
+                ORDER BY le.ts DESC
+                LIMIT ?
+            """, (host, limit))
+        else:
+            # すべてのhostのログを対象にする
+            cursor.execute("""
+                SELECT le.id, le.ts, le.host, le.component, le.message, le.raw_line
+                FROM log_entries le
+                LEFT JOIN ai_analyses aa ON le.id = aa.log_id
+                WHERE le.is_known = 0
+                  AND aa.id IS NULL
+                ORDER BY le.ts DESC
+                LIMIT ?
+            """, (limit,))
         
         unknown_logs = cursor.fetchall()
         
         if not unknown_logs:
-            print("No unknown logs to process")
+            host_msg = f" for host {host}" if host else ""
+            print(f"No unknown logs to process{host_msg}")
             return {
                 'processed': 0,
                 'abnormal': 0,
@@ -257,7 +273,8 @@ If the log is normal and should be added to the pattern database, provide a rege
                 'alerts_created': 0
             }
         
-        print(f"Processing {len(unknown_logs)} unknown logs with LLM...")
+        host_msg = f" for host {host}" if host else ""
+        print(f"Processing {len(unknown_logs)} unknown logs{host_msg} with LLM...")
         
         stats = {
             'processed': 0,
@@ -516,6 +533,7 @@ def main():
     parser.add_argument('--no-auto-add', action='store_true', help='Do not automatically add patterns for normal logs')
     parser.add_argument('--log-id', type=int, help='Analyze specific log ID')
     parser.add_argument('--auto-process', action='store_true', help='Automatically process analysis result (add pattern if normal, create alert if abnormal)')
+    parser.add_argument('--host', help='Process only logs from specific host (e.g., 172.20.224.102)')
     
     args = parser.parse_args()
     
@@ -568,7 +586,8 @@ def main():
             # 未知ログを一括処理
             analyzer.process_unknown_logs(
                 limit=args.limit,
-                auto_add_pattern=not args.no_auto_add
+                auto_add_pattern=not args.no_auto_add,
+                host=args.host
             )
     
     except ValueError as e:
